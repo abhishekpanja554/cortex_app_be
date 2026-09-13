@@ -1,0 +1,19 @@
+app:
+  jwt:
+    secret: ${JWT_SECRET:}
+    access-token-ttl: 15m
+    refresh-token-ttl: 30d
+spring:
+  application:
+    name: cortex_app_be
+  datasource:
+    url: jdbc:postgresql://localhost:5432/cortex_app
+    username: abhis
+    password: ${DB_PASSWORD:}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
