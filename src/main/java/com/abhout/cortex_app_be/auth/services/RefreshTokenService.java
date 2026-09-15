@@ -1,5 +1,6 @@
 package com.abhout.cortex_app_be.auth.services;
 
+import com.abhout.cortex_app_be.auth.RotationResult;
 import com.abhout.cortex_app_be.auth.entities.RefreshToken;
 import com.abhout.cortex_app_be.auth.exceptions.InvalidRefreshTokenException;
 import com.abhout.cortex_app_be.auth.repositories.RefreshTokenRepository;
@@ -52,7 +53,7 @@ public class RefreshTokenService {
     }
 
     @Transactional
-    public String rotate(String presentedRawToken) {
+    public RotationResult rotate(String presentedRawToken) {
         String presentedHash = sha256(presentedRawToken);
 
         RefreshToken found = refreshTokenRepository.findByTokenHash(presentedHash)
@@ -69,7 +70,8 @@ public class RefreshTokenService {
 
         found.revoke();
         refreshTokenRepository.save(found);
-        return issue(found.getUser(), found.getFamilyId());
+        String rawToken = issue(found.getUser(), found.getFamilyId());
+        return new RotationResult(rawToken, found.getUser());
     }
 
     private String generateRawToken() {
