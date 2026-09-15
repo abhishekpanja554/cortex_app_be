@@ -1,5 +1,6 @@
 package com.abhout.cortex_app_be.common;
 
+import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -46,6 +47,15 @@ public class GlobalExceptionHandler {
                         .collect(Collectors.joining("; "));
         return ResponseEntity.badRequest().body(
                 ApiResponse.error("METHOD_ARG_NOT_VALID",message)
+        );
+    }
+
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleConstraintViolation(ConstraintViolationException ex) {
+        String message = ex.getConstraintViolations().stream()
+                        .map(v -> v.getPropertyPath() + " " + v.getMessage())
+                        .collect(Collectors.joining("; "));
+        return ResponseEntity.badRequest().body(ApiResponse.error("CONSTRAINT_VIOLATION", message)
         );
     }
 }
