@@ -7,6 +7,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.springframework.data.domain.Persistable;
 
 import java.util.*;
 
@@ -15,9 +16,8 @@ import java.util.*;
 @Getter
 @Setter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class Note extends Auditable {
+public class Note extends Auditable implements Persistable<UUID> {
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
     @Column(nullable = false)
     private String title;
@@ -40,6 +40,7 @@ public class Note extends Auditable {
     private List<Attachment> attachments = new ArrayList<>();
 
     public Note(String title, String body, User owner) {
+        this.id = UUID.randomUUID();
         this.title = title;
         this.body = body;
         this.owner = owner;
@@ -55,5 +56,10 @@ public class Note extends Auditable {
     @Override
     public int hashCode() {
         return getClass().hashCode();
+    }
+
+    @Override
+    public boolean isNew() {
+        return getCreatedAt() == null;
     }
 }

@@ -46,4 +46,6 @@ public interface NoteRepository extends JpaRepository<Note, UUID> {
             @Param("cursorId") UUID cursorId,
             Pageable pageable
     );
+
+    List<Note> findByOwnerIdAndUpdatedAtAfter(UUID ownerId, Instant since);
 }
