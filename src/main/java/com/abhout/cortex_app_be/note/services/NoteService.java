@@ -7,7 +7,9 @@ import com.abhout.cortex_app_be.note.exceptions.NoteNotFoundException;
 import com.abhout.cortex_app_be.note.repositories.NoteRepository;
 import com.abhout.cortex_app_be.user.entities.User;
 import com.abhout.cortex_app_be.user.repositories.UserRepository;
-import org.springframework.data.crossstore.ChangeSetPersister;
+
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -71,6 +73,7 @@ public class NoteService {
     }
 
     @Transactional
+    @Cacheable(value = "notes", key = "#ownerId + ':' + #noteId")
     public NoteDetailDto get(UUID ownerId, UUID noteId) {
         Note note = noteRepository.findByIdAndOwnerId(noteId, ownerId)
                 .orElseThrow(() -> new NoteNotFoundException(noteId));
@@ -88,6 +91,7 @@ public class NoteService {
     }
 
     @Transactional
+    @CacheEvict(value = "notes", key = "#ownerId + ':' + #noteId")
     public NoteDetailDto update(UUID ownerId, UUID noteId, NoteUpdateRequest request) {
         Note note = noteRepository.findByIdAndOwnerId(noteId, ownerId)
                 .orElseThrow(() -> new NoteNotFoundException(noteId));
@@ -100,6 +104,7 @@ public class NoteService {
     }
 
     @Transactional
+    @CacheEvict(value = "notes", key = "#ownerId + ':' + #noteId")
     public void delete(UUID ownerId, UUID noteId) {
         Note note = noteRepository.findByIdAndOwnerId(noteId, ownerId)
                 .orElseThrow(() -> new NoteNotFoundException(noteId));
