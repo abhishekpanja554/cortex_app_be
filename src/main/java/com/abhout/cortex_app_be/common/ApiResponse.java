@@ -22,8 +22,8 @@ public class ApiResponse<T>{
         return new ApiResponse<>(Status.SUCCESS,null,null);
     }
 
-    public static<T> ApiResponse<T> error(String code, String message) {
-        return new ApiResponse<>(Status.ERROR, null, new ErrorDetails(code, message));
+    public static<T> ApiResponse<T> error(String code, String message, String requestId) {
+        return new ApiResponse<>(Status.ERROR, null, new ErrorDetails(code, message, requestId));
     }
 
     public static<T> ApiResponse<T> error(ErrorDetails errorDetails) {

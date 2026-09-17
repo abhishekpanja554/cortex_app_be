@@ -3,8 +3,10 @@ package com.abhout.cortex_app_be.common;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.ErrorResponse;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -20,10 +22,17 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> handleGeneric(Exception ex){
         if (ex instanceof ErrorResponse errorResponse) {
             return ResponseEntity.status(errorResponse.getStatusCode())
-                    .body(ApiResponse.error("REQUEST_ERROR", errorResponse.getBody().getDetail()));
+                    .body(ApiResponse.error(
+                            "REQUEST_ERROR",
+                            errorResponse.getBody().getDetail(),
+                            MDC.get("requestId"))
+                    );
         }
-        ErrorDetails error = new ErrorDetails("INTERNAL_ERROR",
-                "Something went wrong. Please try after some time");
+        ErrorDetails error = new ErrorDetails(
+                "INTERNAL_ERROR",
+                "Something went wrong. Please try after some time",
+                MDC.get("requestId")
+        );
         logger.error("Unhandled exception", ex);
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -33,8 +42,9 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(BaseException.class)
     public ResponseEntity<ApiResponse<Void>> handleBaseException(BaseException ex) {
+
         return ResponseEntity.status(ex.getStatus())
-                .body(ApiResponse.error(ex.getErrorCode(), ex.getMessage())
+                .body(ApiResponse.error(ex.getErrorCode(), ex.getMessage(), MDC.get("requestId"))
         );
     }
 
@@ -46,7 +56,7 @@ public class GlobalExceptionHandler {
                         .map(e -> e.getField() + " " + e.getDefaultMessage())
                         .collect(Collectors.joining("; "));
         return ResponseEntity.badRequest().body(
-                ApiResponse.error("METHOD_ARG_NOT_VALID",message)
+                ApiResponse.error("METHOD_ARG_NOT_VALID",message, MDC.get("requestId"))
         );
     }
 
@@ -55,7 +65,16 @@ public class GlobalExceptionHandler {
         String message = ex.getConstraintViolations().stream()
                         .map(v -> v.getPropertyPath() + " " + v.getMessage())
                         .collect(Collectors.joining("; "));
-        return ResponseEntity.badRequest().body(ApiResponse.error("CONSTRAINT_VIOLATION", message)
+        return ResponseEntity.badRequest().body(ApiResponse.error("CONSTRAINT_VIOLATION", message, MDC.get("requestId"))
+        );
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiResponse<Void>>
+    handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+        String message = ex.getName() + " has an invalid value: " + ex.getValue();
+        return ResponseEntity.badRequest().body(
+                ApiResponse.error("INVALID_PARAMETER", message, MDC.get("requestId"))
         );
     }
 }

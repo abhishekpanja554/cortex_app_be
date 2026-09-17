@@ -4,6 +4,8 @@ import java.util.UUID;
 
 public record PushResultItem(
         UUID id,
-        PushOutcome outcome
+        PushOutcome titleOutcome,
+        PushOutcome bodyOutcome,
+        UUID conflictNoteId
 ) {
 }

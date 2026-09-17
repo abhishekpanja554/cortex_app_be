@@ -98,6 +98,8 @@ public class NoteService {
 
         note.setTitle(request.title());
         note.setBody(request.body());
+        note.setTitleUpdatedAt(Instant.now());
+        note.setBodyUpdatedAt(Instant.now());
         noteRepository.save(note);
 
         return NoteDetailDto.from(note);

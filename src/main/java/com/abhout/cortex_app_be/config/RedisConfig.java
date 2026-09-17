@@ -1,5 +1,6 @@
 package com.abhout.cortex_app_be.config;
 
+import org.springframework.boot.cache.autoconfigure.RedisCacheManagerBuilderCustomizer;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -10,6 +11,7 @@ import tools.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
 import tools.jackson.databind.jsontype.PolymorphicTypeValidator;
 
 import java.time.Duration;
+import java.util.Set;
 
 @Configuration
 @EnableCaching
@@ -29,5 +31,10 @@ public class RedisConfig {
                                 .enableDefaultTyping(typeValidator)
                                 .build()))
                 .disableCachingNullValues();
+    }
+
+    @Bean
+    RedisCacheManagerBuilderCustomizer cacheManagerBuilderCustomizer() {
+        return builder -> builder.initialCacheNames(Set.of("notes")).enableStatistics();
     }
 }

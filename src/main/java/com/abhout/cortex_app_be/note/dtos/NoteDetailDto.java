@@ -13,7 +13,11 @@ public record NoteDetailDto(
         String body,
         Instant createdAt,
         Instant updatedAt,
-        List<AttachmentSummaryDto> attachments
+        Instant titleUpdatedAt,
+        Instant bodyUpdatedAt,
+        List<AttachmentSummaryDto> attachments,
+        UUID conflictOf,
+        String conflictField
 ) {
     public static NoteDetailDto from(Note note) {
         List<AttachmentSummaryDto> attachmentDtos = note.getAttachments().stream()
@@ -26,7 +30,11 @@ public record NoteDetailDto(
                 note.getBody(),
                 note.getCreatedAt(),
                 note.getUpdatedAt(),
-                attachmentDtos
+                note.getTitleUpdatedAt(),
+                note.getBodyUpdatedAt(),
+                attachmentDtos,
+                note.getConflictOf(),
+                note.getConflictField()
         );
     }
 }

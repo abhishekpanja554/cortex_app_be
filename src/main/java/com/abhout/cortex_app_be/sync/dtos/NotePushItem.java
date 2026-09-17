@@ -10,6 +10,8 @@ public record NotePushItem(
         @NotNull UUID id,
         @NotBlank String title,
         @NotNull String body,
-        @NotNull Instant clientUpdatedAt
+        @NotNull Instant titleBaseUpdatedAt,
+        @NotNull Instant bodyBaseUpdatedAt
+
 ) {
 }

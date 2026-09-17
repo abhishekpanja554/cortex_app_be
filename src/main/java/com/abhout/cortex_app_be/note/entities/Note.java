@@ -9,6 +9,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.springframework.data.domain.Persistable;
 
+import java.time.Instant;
 import java.util.*;
 
 @Entity
@@ -38,12 +39,22 @@ public class Note extends Auditable implements Persistable<UUID> {
     private Set<Tag> tags = new HashSet<>();
     @OneToMany(mappedBy = "note", fetch = FetchType.LAZY)
     private List<Attachment> attachments = new ArrayList<>();
+    @Column(name = "title_updated_at", nullable = false)
+    private Instant titleUpdatedAt;
+    @Column(name = "body_updated_at", nullable = false)
+    private Instant bodyUpdatedAt;
+    @Column(name = "conflict_of", nullable = true)
+    private UUID conflictOf;
+    @Column(name = "conflict_field", nullable = true)
+    private String conflictField;
 
     public Note(String title, String body, User owner) {
         this.id = UUID.randomUUID();
         this.title = title;
         this.body = body;
         this.owner = owner;
+        this.titleUpdatedAt = Instant.now();
+        this.bodyUpdatedAt = Instant.now();
     }
 
     @Override
