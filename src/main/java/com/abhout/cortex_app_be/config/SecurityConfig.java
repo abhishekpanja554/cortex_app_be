@@ -1,9 +1,12 @@
 package com.abhout.cortex_app_be.config;
 
 import com.abhout.cortex_app_be.auth.security.JWTAuthSecurityFilter;
+import com.abhout.cortex_app_be.jobs.security.InternalApiKeyFilter;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.Ordered;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -28,6 +31,7 @@ public class SecurityConfig {
                         auth -> auth
                                 .requestMatchers(
                                         "/auth/**",
+                                        "/internal/**",
                                         "/error",
                                         "/actuator/health",
                                         "/actuator/metrics")
@@ -46,5 +50,15 @@ public class SecurityConfig {
                                 }
                 ));
         return http.build();
+    }
+
+    @Bean
+    FilterRegistrationBean<InternalApiKeyFilter> internalApiKeyFilter(JobProperties jobProperties){
+        FilterRegistrationBean<InternalApiKeyFilter> bean = new FilterRegistrationBean<>(
+                new InternalApiKeyFilter(jobProperties.getInternalApiKey())
+        );
+        bean.addUrlPatterns("/internal/*");
+        bean.setOrder(Ordered.HIGHEST_PRECEDENCE + 1);
+        return bean;
     }
 }

@@ -3,6 +3,10 @@ app:
     secret: ${JWT_SECRET:}
     access-token-ttl: 15m
     refresh-token-ttl: 30d
+  jobs:
+    internal-api-key: ${CORTEX_AI_API_KEY:}
+    queue-key: jobs:embedding
+    timeout-threshold: 5m
 spring:
   application:
     name: cortex_app_be

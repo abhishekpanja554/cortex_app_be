@@ -1,5 +1,6 @@
 package com.abhout.cortex_app_be.sync.services;
 
+import com.abhout.cortex_app_be.jobs.services.JobPublisher;
 import com.abhout.cortex_app_be.note.dtos.NoteDetailDto;
 import com.abhout.cortex_app_be.note.entities.Note;
 import com.abhout.cortex_app_be.note.repositories.NoteRepository;
@@ -25,11 +26,17 @@ public class SyncService {
     private final NoteRepository noteRepository;
     private final UserRepository userRepository;
     private final CacheManager cacheManager;
+    private final JobPublisher jobPublisher;
 
-    public SyncService(NoteRepository noteRepository, UserRepository userRepository, CacheManager cacheManager) {
+    public SyncService(
+            NoteRepository noteRepository,
+            UserRepository userRepository,
+            CacheManager cacheManager,
+            JobPublisher jobPublisher) {
         this.noteRepository = noteRepository;
         this.userRepository = userRepository;
         this.cacheManager = cacheManager;
+        this.jobPublisher = jobPublisher;
     }
 
     private void evictNoteFromCache(UUID noteId) {
@@ -51,6 +58,7 @@ public class SyncService {
                 Note newNote = new Note(item.title(), item.body(), owner);
                 newNote.setId(item.id());
                 noteRepository.save(newNote);
+                jobPublisher.publishEmbedJob(newNote);
                 results.add(new PushResultItem(item.id(), ACCEPTED, ACCEPTED, null));
                 continue;
             }
@@ -73,7 +81,7 @@ public class SyncService {
 
             if (titleBaseMatches) {
                 note.setTitle(item.title());
-                note.setTitleUpdatedAt(Instant.now());   //server-assigned, not client-claimed
+                note.setTitleUpdatedAt(Instant.now());
             }
             if (bodyBaseMatches) {
                 note.setBody(item.body());
@@ -81,10 +89,7 @@ public class SyncService {
             }
             if (titleBaseMatches || bodyBaseMatches) {
                 noteRepository.save(note);
-                evictNoteFromCache(note.getId());
-            }
-            if (titleConflict || bodyConflict) {
-                noteRepository.save(note);
+                jobPublisher.publishEmbedJob(note);
                 evictNoteFromCache(note.getId());
             }
 
@@ -98,6 +103,7 @@ public class SyncService {
                                 titleConflict ? "title" : "body"
                 );
                 noteRepository.save(conflictCopy);
+                jobPublisher.publishEmbedJob(conflictCopy);
                 conflictNoteId = conflictCopy.getId();
             }
 

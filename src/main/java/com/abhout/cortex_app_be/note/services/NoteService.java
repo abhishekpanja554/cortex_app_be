@@ -1,6 +1,8 @@
 package com.abhout.cortex_app_be.note.services;
 
 import com.abhout.cortex_app_be.common.CursorPage;
+import com.abhout.cortex_app_be.jobs.entities.JobType;
+import com.abhout.cortex_app_be.jobs.services.JobPublisher;
 import com.abhout.cortex_app_be.note.dtos.*;
 import com.abhout.cortex_app_be.note.entities.Note;
 import com.abhout.cortex_app_be.note.exceptions.NoteNotFoundException;
@@ -26,13 +28,16 @@ public class NoteService {
 
     private final NoteRepository noteRepository;
     private final UserRepository userRepository;
+    private final JobPublisher jobPublisher;
 
     public NoteService(
             NoteRepository noteRepository,
-            UserRepository userRepository
+            UserRepository userRepository,
+            JobPublisher jobPublisher
     ) {
         this.noteRepository = noteRepository;
         this.userRepository = userRepository;
+        this.jobPublisher = jobPublisher;
     }
 
     public CursorPage<NoteSummaryDto> list(
@@ -86,7 +91,7 @@ public class NoteService {
 
         Note note = new Note(request.title(), request.body(), owner);
         noteRepository.save(note);
-
+        jobPublisher.publishEmbedJob(note);
         return NoteDetailDto.from(note);
     }
 
@@ -101,7 +106,7 @@ public class NoteService {
         note.setTitleUpdatedAt(Instant.now());
         note.setBodyUpdatedAt(Instant.now());
         noteRepository.save(note);
-
+        jobPublisher.publishEmbedJob(note);
         return NoteDetailDto.from(note);
     }
 
@@ -112,6 +117,7 @@ public class NoteService {
                 .orElseThrow(() -> new NoteNotFoundException(noteId));
 
         noteRepository.delete(note);
+        jobPublisher.publishDeleteJob(note.getId(), ownerId);
     }
 
     private int clampLimit(int requested) {
