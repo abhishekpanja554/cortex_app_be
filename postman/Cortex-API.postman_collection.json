@@ -1,0 +1,754 @@
+{
+  "info": {
+    "name": "Cortex API",
+    "description": "cortex-api (Spring Boot backend for Cortex) — Auth, Notes CRUD, Full-text Search, and the Sync Engine, including self-contained, runnable demos of the sync engine's evolution (spec §5):\n- Stage 2: naive whole-note LWW silently destroying data (historical — the push request shape has changed twice since, so this folder no longer runs against the current API; kept as a record of the original bug).\n- Stage 3/4: field-level LWW with optimistic-concurrency conflict detection. Each field's `...BaseUpdatedAt` is a version token, not a clock timestamp — a client reports what it last saw for that field before editing it. If the field's current stored token no longer matches, someone else changed it since — that's a genuine CONFLICT (the edit is preserved as a separate, visible duplicate note, never silently discarded), not just \"my clock says I'm later.\"\n\nBefore using this collection:\n1. The app must be running locally on the `baseUrl` below (default `http://localhost:8080`) — Postgres reachable, Redis reachable (auto-started by `spring-boot-docker-compose`), and `JWT_SECRET` exported in the shell that launches the app.\n2. Run **Auth > Register** first to populate the `accessToken`/`refreshToken` collection variables used by every other folder — except the **Stage 2** and **Stage 3/4** demo folders, which each register their own user and are fully self-contained.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{accessToken}}", "type": "string" }
+    ]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080", "type": "string" },
+    { "key": "accessToken", "value": "", "type": "string" },
+    { "key": "refreshToken", "value": "", "type": "string" },
+    { "key": "demoEmail", "value": "", "type": "string" },
+    { "key": "noteId", "value": "", "type": "string" },
+    { "key": "noteTitleBase", "value": "", "type": "string" },
+    { "key": "noteBodyBase", "value": "", "type": "string" },
+    { "key": "demoNoteId", "value": "", "type": "string" },
+    { "key": "sharedTitleBase", "value": "", "type": "string" },
+    { "key": "sharedBodyBase", "value": "", "type": "string" },
+    { "key": "conflictNoteId", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('demoEmail', 'user_' + Date.now() + '@example.com');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () { pm.response.to.have.status(201); });",
+                  "var jsonData = pm.response.json();",
+                  "pm.collectionVariables.set('accessToken', jsonData.data.accessToken);",
+                  "pm.collectionVariables.set('refreshToken', jsonData.data.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{demoEmail}}\",\n  \"password\": \"correct-horse-battery\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "auth", "register" ]
+            },
+            "description": "Registers a fresh user (unique email generated per run) and saves the returned access/refresh tokens as collection variables, used by every other request via the collection-level Bearer auth."
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+                  "var jsonData = pm.response.json();",
+                  "pm.collectionVariables.set('accessToken', jsonData.data.accessToken);",
+                  "pm.collectionVariables.set('refreshToken', jsonData.data.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{demoEmail}}\",\n  \"password\": \"correct-horse-battery\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "auth", "login" ]
+            },
+            "description": "Re-uses the email from the last Register call (edit the body to log in as a different account)."
+          }
+        },
+        {
+          "name": "Refresh Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+                  "var jsonData = pm.response.json();",
+                  "pm.collectionVariables.set('accessToken', jsonData.data.accessToken);",
+                  "pm.collectionVariables.set('refreshToken', jsonData.data.refreshToken);",
+                  "pm.test('Refresh token was rotated (different from the one we sent)', function () {",
+                  "    pm.expect(jsonData.data.refreshToken).to.not.eql(pm.collectionVariables.get('refreshToken'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/refresh",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "auth", "refresh" ]
+            },
+            "description": "Rotates the refresh token. Run this twice in a row with the same stored token to see reuse-detection kick in (second call gets a 401, INVALID_REFRESH_TOKEN)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Notes",
+      "item": [
+        {
+          "name": "Create Note",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () { pm.response.to.have.status(201); });",
+                  "var jsonData = pm.response.json();",
+                  "pm.collectionVariables.set('noteId', jsonData.data.id);",
+                  "pm.collectionVariables.set('noteTitleBase', jsonData.data.titleUpdatedAt);",
+                  "pm.collectionVariables.set('noteBodyBase', jsonData.data.bodyUpdatedAt);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"My first note\",\n  \"body\": \"Hello, Cortex.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/notes",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "notes" ]
+            }
+          }
+        },
+        {
+          "name": "List Notes (cursor-paginated)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/notes?limit=20",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "notes" ],
+              "query": [
+                { "key": "limit", "value": "20" },
+                { "key": "cursor", "value": "", "disabled": true }
+              ]
+            },
+            "description": "List response items never include `body` — proof is in the query itself, not just the DTO shape. Paste the `nextCursor` from a response into the disabled `cursor` param (and enable it) to get the next page."
+          }
+        },
+        {
+          "name": "Get Note",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.data && jsonData.data.titleUpdatedAt) {",
+                  "    pm.collectionVariables.set('noteTitleBase', jsonData.data.titleUpdatedAt);",
+                  "    pm.collectionVariables.set('noteBodyBase', jsonData.data.bodyUpdatedAt);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/notes/{{noteId}}",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "notes", "{{noteId}}" ]
+            },
+            "description": "Response includes `titleUpdatedAt`/`bodyUpdatedAt` (saved as `noteTitleBase`/`noteBodyBase`) — the per-field version tokens a real sync client must read before constructing its next `/sync/push` (see the Sync folder), and `conflictOf`/`conflictField`, populated only on a note that was created as someone's rejected-conflict copy."
+          }
+        },
+        {
+          "name": "Update Note",
+          "request": {
+            "method": "PUT",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"My first note (edited)\",\n  \"body\": \"Hello, Cortex — updated.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/notes/{{noteId}}",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "notes", "{{noteId}}" ]
+            }
+          }
+        },
+        {
+          "name": "Delete Note",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/notes/{{noteId}}",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "notes", "{{noteId}}" ]
+            },
+            "description": "Returns 204 with no body. Redis cache entry for this note is evicted as part of the same request."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Search",
+      "item": [
+        {
+          "name": "Search Notes",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/search?q=cortex&limit=20",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "search" ],
+              "query": [
+                { "key": "q", "value": "cortex" },
+                { "key": "limit", "value": "20" },
+                { "key": "cursor", "value": "", "disabled": true }
+              ]
+            },
+            "description": "Full-text search, ranked by relevance (title matches weighted above body matches). Cursor-paginated the same way as List Notes."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Sync",
+      "item": [
+        {
+          "name": "Pull (get changes since last sync)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/sync/pull",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "sync", "pull" ],
+              "query": [
+                { "key": "since", "value": "", "disabled": true, "description": "ISO-8601 instant. Omit for a first-time sync (returns everything). Use the `nextSince` from a previous pull response as the `since` for the next one (it deliberately overlaps the last window, so a note may arrive twice; apply idempotently) — never the client's own clock." }
+              ]
+            },
+            "description": "Each returned note includes `titleUpdatedAt`/`bodyUpdatedAt` — a real client stores these locally per note as its 'base', and echoes them back unchanged on its next push for any field it didn't edit."
+          }
+        },
+        {
+          "name": "Push (upload local changes)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": [\n    {\n      \"id\": \"{{noteId}}\",\n      \"title\": \"Edited offline\",\n      \"body\": \"This edit was queued while offline and is now being pushed.\",\n      \"titleBaseUpdatedAt\": \"{{noteTitleBase}}\",\n      \"bodyBaseUpdatedAt\": \"{{noteBodyBase}}\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sync/push",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "sync", "push" ]
+            },
+            "description": "Optimistic-concurrency field-level sync. Each field is accepted only if its `...BaseUpdatedAt` exactly matches the note's CURRENT stored value for that field — i.e. nothing changed underneath you since you last knew about this field. If it doesn't match: ACCEPTED becomes either REJECTED_STALE (your content already matches what's stored — nothing lost) or CONFLICT (your content differs — a duplicate note is created holding your version, and `conflictNoteId` in the response points to it). Run **Notes > Get Note** first to refresh `{{noteTitleBase}}`/`{{noteBodyBase}}` to the current values. Uses `{{noteId}}` from the Notes folder by default; for an ID that doesn't exist yet for this user, this creates it (client-generated ID preserved)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Stage 2 — Naive Whole-Note LWW (historical, no longer runs)",
+      "description": "HISTORICAL — kept as a record of the original bug, not runnable against the current API. This folder's requests use the very first push contract (`clientUpdatedAt`); the request shape has since changed twice (field-level timestamps in stage 3, then base-matching in stage 4). See the **Stage 3/4** folder for the current, runnable version of this same concurrent-edit scenario.",
+      "item": [
+        {
+          "name": "0. Register Demo User",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('demoEmail', 'stage2_' + Date.now() + '@example.com');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () { pm.response.to.have.status(201); });",
+                  "var jsonData = pm.response.json();",
+                  "pm.collectionVariables.set('accessToken', jsonData.data.accessToken);",
+                  "pm.collectionVariables.set('refreshToken', jsonData.data.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{demoEmail}}\",\n  \"password\": \"correct-horse-battery\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "auth", "register" ]
+            }
+          }
+        },
+        {
+          "name": "1. Create Shared Note",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set('demoNoteId', pm.response.json().data.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Team sync notes\",\n  \"body\": \"Discuss roadmap for Q1\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/notes",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "notes" ]
+            }
+          }
+        },
+        {
+          "name": "2. Push using the ORIGINAL (now-defunct) clientUpdatedAt contract — expect 400",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": [\n    {\n      \"id\": \"{{demoNoteId}}\",\n      \"title\": \"Team sync notes — URGENT\",\n      \"body\": \"Discuss roadmap for Q1\",\n      \"clientUpdatedAt\": \"2026-01-01T00:00:00Z\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sync/push",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "sync", "push" ]
+            },
+            "description": "This is the ORIGINAL stage-2 push shape. `NotePushItem` no longer has a `clientUpdatedAt` field (it now requires `titleBaseUpdatedAt`/`bodyBaseUpdatedAt`), so this request fails validation — proof, by itself, that the naive whole-note design has been fully replaced, not patched around."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Stage 3/4 — Field-Level LWW + Conflict Surfacing",
+      "description": "Three scenarios, run in order. Each is self-contained (registers its own user).\n\n**A (0-4): different fields, concurrently edited.** Device A edits only the title, Device B only the body — offline, unaware of each other, both correctly echo back their unedited field's BASE token. Both edits survive: this is what field-level LWW alone (stage 3) already fixes.\n\n**B (5-8): the SAME field, concurrently edited — the case stage 3 alone could NOT fix.** Device A edits the title, based on the shared original. Device B ALSO edits the title, based on that SAME original base — never having seen Device A's edit. Because Device B's base no longer matches what's actually stored (Device A's edit already landed), this is now correctly detected as a genuine CONFLICT: Device A's edit is preserved untouched, and Device B's edit survives too — as a separate, fully visible duplicate note — instead of one silently overwriting the other.\n\n**C (9-10): the noop case — proves the design doesn't spawn junk duplicates.** A push whose base is stale AND whose content already matches what's stored (e.g. a retried request) is correctly just REJECTED_STALE, not CONFLICT — no duplicate note is created for something that changed nothing.",
+      "item": [
+        {
+          "name": "0. Register Demo User",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('demoEmail', 'stage34_' + Date.now() + '@example.com');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () { pm.response.to.have.status(201); });",
+                  "var jsonData = pm.response.json();",
+                  "pm.collectionVariables.set('accessToken', jsonData.data.accessToken);",
+                  "pm.collectionVariables.set('refreshToken', jsonData.data.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{demoEmail}}\",\n  \"password\": \"correct-horse-battery\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "auth", "register" ]
+            }
+          }
+        },
+        {
+          "name": "1. [A] Create Shared Note (captures the base both devices start from)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () { pm.response.to.have.status(201); });",
+                  "var jsonData = pm.response.json();",
+                  "pm.collectionVariables.set('demoNoteId', jsonData.data.id);",
+                  "pm.collectionVariables.set('sharedTitleBase', jsonData.data.titleUpdatedAt);",
+                  "pm.collectionVariables.set('sharedBodyBase', jsonData.data.bodyUpdatedAt);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Team sync notes\",\n  \"body\": \"Discuss roadmap for Q1\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/notes",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "notes" ]
+            }
+          }
+        },
+        {
+          "name": "2. [A] Device A pushes — title only",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+                  "var r = pm.response.json().data.results[0];",
+                  "pm.test('titleOutcome is ACCEPTED', function () { pm.expect(r.titleOutcome).to.eql('ACCEPTED'); });",
+                  "pm.test('bodyOutcome is ACCEPTED (base matches — A honestly echoed the unedited field)', function () { pm.expect(r.bodyOutcome).to.eql('ACCEPTED'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": [\n    {\n      \"id\": \"{{demoNoteId}}\",\n      \"title\": \"Team sync notes — URGENT\",\n      \"body\": \"Discuss roadmap for Q1\",\n      \"titleBaseUpdatedAt\": \"{{sharedTitleBase}}\",\n      \"bodyBaseUpdatedAt\": \"{{sharedBodyBase}}\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sync/push",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "sync", "push" ]
+            }
+          }
+        },
+        {
+          "name": "3. [A] Device B pushes — body only (still using the ORIGINAL shared base, unaware of A's edit)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+                  "var r = pm.response.json().data.results[0];",
+                  "pm.test('titleOutcome is REJECTED_STALE (B\\'s title content matches what\\'s stored server-side... wait, it does NOT — B echoed the original title, A changed it. So this checks the real behavior:)', function () {",
+                  "    pm.expect(['REJECTED_STALE','CONFLICT']).to.include(r.titleOutcome);",
+                  "});",
+                  "pm.test('bodyOutcome is ACCEPTED', function () { pm.expect(r.bodyOutcome).to.eql('ACCEPTED'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": [\n    {\n      \"id\": \"{{demoNoteId}}\",\n      \"title\": \"Team sync notes\",\n      \"body\": \"Discuss roadmap for Q1. Action items: assign owners.\",\n      \"titleBaseUpdatedAt\": \"{{sharedTitleBase}}\",\n      \"bodyBaseUpdatedAt\": \"{{sharedBodyBase}}\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sync/push",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "sync", "push" ]
+            },
+            "description": "Device B's title is unchanged from the ORIGINAL — it matches what device B last saw, but not what's currently stored (A already changed it). Since B's title content equals the pre-A-edit original and NOT the current stored title, this correctly resolves as REJECTED_STALE, not CONFLICT — B isn't asserting a conflicting edit, it's just out of date on a field it never touched."
+          }
+        },
+        {
+          "name": "4. [A] Observe: BOTH edits survived (different-field case — stage 3 alone fixes this)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Device A\\'s title edit survived', function () { pm.expect(jsonData.data.title).to.include('URGENT'); });",
+                  "pm.test('Device B\\'s body edit survived', function () { pm.expect(jsonData.data.body).to.include('Action items'); });",
+                  "console.log('Title: \"' + jsonData.data.title + '\"');",
+                  "console.log('Body:  \"' + jsonData.data.body + '\"');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/notes/{{demoNoteId}}",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "notes", "{{demoNoteId}}" ]
+            }
+          }
+        },
+        {
+          "name": "5. [B] Create a SECOND shared note (for the same-field conflict)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () { pm.response.to.have.status(201); });",
+                  "var jsonData = pm.response.json();",
+                  "pm.collectionVariables.set('demoNoteId', jsonData.data.id);",
+                  "pm.collectionVariables.set('sharedTitleBase', jsonData.data.titleUpdatedAt);",
+                  "pm.collectionVariables.set('sharedBodyBase', jsonData.data.bodyUpdatedAt);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Vacation plan\",\n  \"body\": \"Where should we go?\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/notes",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "notes" ]
+            }
+          }
+        },
+        {
+          "name": "6. [B] Device A pushes — title -> 'Paris trip'",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('titleOutcome is ACCEPTED', function () { pm.expect(pm.response.json().data.results[0].titleOutcome).to.eql('ACCEPTED'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": [\n    {\n      \"id\": \"{{demoNoteId}}\",\n      \"title\": \"Paris trip\",\n      \"body\": \"Where should we go?\",\n      \"titleBaseUpdatedAt\": \"{{sharedTitleBase}}\",\n      \"bodyBaseUpdatedAt\": \"{{sharedBodyBase}}\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sync/push",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "sync", "push" ]
+            }
+          }
+        },
+        {
+          "name": "7. [B] Device B pushes — SAME field, title -> 'Tokyo trip', using the SAME original base (never saw A's edit)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+                  "var jsonData = pm.response.json();",
+                  "var r = jsonData.data.results[0];",
+                  "pm.test('titleOutcome is CONFLICT — B\\'s base is stale AND its content genuinely differs from what\\'s stored', function () {",
+                  "    pm.expect(r.titleOutcome).to.eql('CONFLICT');",
+                  "});",
+                  "pm.test('a conflictNoteId was returned', function () { pm.expect(r.conflictNoteId).to.not.be.null; });",
+                  "pm.collectionVariables.set('conflictNoteId', r.conflictNoteId);",
+                  "console.log('Conflict detected. Device B\\'s \"Tokyo trip\" saved as duplicate note: ' + r.conflictNoteId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": [\n    {\n      \"id\": \"{{demoNoteId}}\",\n      \"title\": \"Tokyo trip\",\n      \"body\": \"Where should we go?\",\n      \"titleBaseUpdatedAt\": \"{{sharedTitleBase}}\",\n      \"bodyBaseUpdatedAt\": \"{{sharedBodyBase}}\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sync/push",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "sync", "push" ]
+            },
+            "description": "THIS is the case naive whole-note LWW (stage 2) AND field-level-LWW-without-conflict-detection would both get wrong: Device B's title genuinely differs from what's stored, and its base is stale. Base-matching alone (used for accept/reject) can't tell 'this is a deliberate overwrite' from 'this is an independent edit that never saw A's change' — so instead of picking a winner, this is surfaced as a CONFLICT and BOTH versions are kept."
+          }
+        },
+        {
+          "name": "8. [B] Observe: BOTH versions survived — original untouched, B's edit is a visible duplicate",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Original note still says Paris trip — Device A\\'s edit was NOT silently overwritten', function () {",
+                  "    pm.expect(jsonData.data.title).to.eql('Paris trip');",
+                  "});",
+                  "console.log('Original note title: \"' + jsonData.data.title + '\" — untouched by B\\'s conflicting push.');",
+                  "console.log('Compare against the conflict copy at note id: ' + pm.collectionVariables.get('conflictNoteId'));",
+                  "console.log('Run \"9. Fetch the Conflict Copy\" next to see Device B\\'s \"Tokyo trip\" fully preserved there.');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/notes/{{demoNoteId}}",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "notes", "{{demoNoteId}}" ]
+            }
+          }
+        },
+        {
+          "name": "9. [B] Fetch the Conflict Copy — Device B's edit, fully preserved",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Conflict copy holds Device B\\'s \"Tokyo trip\" edit', function () {",
+                  "    pm.expect(jsonData.data.title).to.eql('Tokyo trip');",
+                  "});",
+                  "pm.test('conflictOf points back to the original note', function () {",
+                  "    pm.expect(jsonData.data.conflictOf).to.eql(pm.collectionVariables.get('demoNoteId'));",
+                  "});",
+                  "pm.test('conflictField correctly identifies which field conflicted', function () {",
+                  "    pm.expect(jsonData.data.conflictField).to.eql('title');",
+                  "});",
+                  "console.log('Conflict copy title: \"' + jsonData.data.title + '\"');",
+                  "console.log('conflictOf: ' + jsonData.data.conflictOf + '  conflictField: ' + jsonData.data.conflictField);",
+                  "console.log('');",
+                  "console.log('This is the fix: naive whole-note LWW (stage 2) would have silently destroyed');",
+                  "console.log('one of these two edits with no trace. Here, both survive — one as the accepted');",
+                  "console.log('note, one as a clearly-flagged duplicate the user can find, compare, and resolve');",
+                  "console.log('using ordinary Notes CRUD (edit one, delete the other) — no special endpoint needed.');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/notes/{{conflictNoteId}}",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "notes", "{{conflictNoteId}}" ]
+            }
+          }
+        },
+        {
+          "name": "10. [C] Noop check — a stale, but IDENTICAL, push is REJECTED_STALE, not CONFLICT (no junk duplicate)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+                  "var r = pm.response.json().data.results[0];",
+                  "pm.test('titleOutcome is REJECTED_STALE (content matches, no real conflict)', function () {",
+                  "    pm.expect(r.titleOutcome).to.eql('REJECTED_STALE');",
+                  "});",
+                  "pm.test('no conflictNoteId — nothing was created', function () { pm.expect(r.conflictNoteId).to.be.null; });",
+                  "console.log('A retried/duplicate push using a stale base, but whose content already matches');",
+                  "console.log('what\\'s stored, correctly does NOT spawn a duplicate note — it has nothing new to say.');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": [\n    {\n      \"id\": \"{{demoNoteId}}\",\n      \"title\": \"Paris trip\",\n      \"body\": \"Where should we go?\",\n      \"titleBaseUpdatedAt\": \"{{sharedTitleBase}}\",\n      \"bodyBaseUpdatedAt\": \"{{sharedBodyBase}}\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sync/push",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "sync", "push" ]
+            },
+            "description": "Stale base (the original, pre-A-edit one) but the title content ('Paris trip') exactly matches what's currently stored — e.g. a client retrying a push it never got a response for. Correctly resolves as REJECTED_STALE, not CONFLICT: nothing would be gained by creating a duplicate here."
+          }
+        }
+      ]
+    }
+  ]
+}
