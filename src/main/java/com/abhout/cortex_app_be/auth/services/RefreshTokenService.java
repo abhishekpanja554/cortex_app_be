@@ -52,7 +52,7 @@ public class RefreshTokenService {
         return rawToken;
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = InvalidRefreshTokenException.class)
     public RotationResult rotate(String presentedRawToken) {
         String presentedHash = sha256(presentedRawToken);
 
