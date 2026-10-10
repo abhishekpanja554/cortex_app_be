@@ -80,7 +80,7 @@ public class NoteService {
     @Transactional
     @Cacheable(value = "notes", key = "#ownerId + ':' + #noteId")
     public NoteDetailDto get(UUID ownerId, UUID noteId) {
-        Note note = noteRepository.findByIdAndOwnerId(noteId, ownerId)
+        Note note = noteRepository.findByIdAndOwnerIdAndDeletedAtIsNull(noteId, ownerId)
                 .orElseThrow(() -> new NoteNotFoundException(noteId));
         return NoteDetailDto.from(note);
     }
@@ -98,13 +98,27 @@ public class NoteService {
     @Transactional
     @CacheEvict(value = "notes", key = "#ownerId + ':' + #noteId")
     public NoteDetailDto update(UUID ownerId, UUID noteId, NoteUpdateRequest request) {
-        Note note = noteRepository.findByIdAndOwnerId(noteId, ownerId)
+        Note note = noteRepository.findActiveByIdAndOwnerForUpdate(noteId, ownerId)
                 .orElseThrow(() -> new NoteNotFoundException(noteId));
 
-        note.setTitle(request.title());
-        note.setBody(request.body());
-        note.setTitleUpdatedAt(Instant.now());
-        note.setBodyUpdatedAt(Instant.now());
+        // Only bump a field's version stamp if its content actually changed. PUT always carries
+        // both fields; bumping both would make a device's pending edit to the untouched field
+        // fail its base check on the next sync push and spawn a false conflict copy.
+        boolean titleChanged = !note.getTitle().equals(request.title());
+        boolean bodyChanged = !note.getBody().equals(request.body());
+        if (!titleChanged && !bodyChanged) {
+            return NoteDetailDto.from(note);
+        }
+
+        Instant now = Note.versionStamp();
+        if (titleChanged) {
+            note.setTitle(request.title());
+            note.setTitleUpdatedAt(now);
+        }
+        if (bodyChanged) {
+            note.setBody(request.body());
+            note.setBodyUpdatedAt(now);
+        }
         noteRepository.save(note);
         jobPublisher.publishEmbedJob(note);
         return NoteDetailDto.from(note);
@@ -113,10 +127,13 @@ public class NoteService {
     @Transactional
     @CacheEvict(value = "notes", key = "#ownerId + ':' + #noteId")
     public void delete(UUID ownerId, UUID noteId) {
-        Note note = noteRepository.findByIdAndOwnerId(noteId, ownerId)
+        Note note = noteRepository.findActiveByIdAndOwnerForUpdate(noteId, ownerId)
                 .orElseThrow(() -> new NoteNotFoundException(noteId));
 
-        noteRepository.delete(note);
+        // Soft delete: the row stays as a tombstone so /sync/pull can tell other devices,
+        // and so a later sync push for this ID is rejected instead of re-creating the note.
+        note.setDeletedAt(Note.versionStamp());
+        noteRepository.save(note);
         jobPublisher.publishDeleteJob(note.getId(), ownerId);
     }
 

@@ -17,7 +17,8 @@ public record NoteDetailDto(
         Instant bodyUpdatedAt,
         List<AttachmentSummaryDto> attachments,
         UUID conflictOf,
-        String conflictField
+        String conflictField,
+        Instant deletedAt
 ) {
     public static NoteDetailDto from(Note note) {
         List<AttachmentSummaryDto> attachmentDtos = note.getAttachments().stream()
@@ -34,7 +35,8 @@ public record NoteDetailDto(
                 note.getBodyUpdatedAt(),
                 attachmentDtos,
                 note.getConflictOf(),
-                note.getConflictField()
+                note.getConflictField(),
+                note.getDeletedAt()
         );
     }
 }

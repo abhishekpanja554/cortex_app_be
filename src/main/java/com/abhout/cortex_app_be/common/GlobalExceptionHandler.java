@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.ErrorResponse;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -75,6 +76,19 @@ public class GlobalExceptionHandler {
         String message = ex.getName() + " has an invalid value: " + ex.getValue();
         return ResponseEntity.badRequest().body(
                 ApiResponse.error("INVALID_PARAMETER", message, MDC.get("requestId"))
+        );
+    }
+
+    // Missing/unparseable body or a JSON value of the wrong type. Jackson's own message names
+    // internal classes, so it's logged rather than returned.
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiResponse<Void>>
+    handleUnreadableBody(HttpMessageNotReadableException ex) {
+        logger.warn("Unreadable request body: {}", ex.getMessage());
+        return ResponseEntity.badRequest().body(
+                ApiResponse.error("MALFORMED_REQUEST_BODY",
+                        "Request body is missing or is not valid JSON for this endpoint",
+                        MDC.get("requestId"))
         );
     }
 }

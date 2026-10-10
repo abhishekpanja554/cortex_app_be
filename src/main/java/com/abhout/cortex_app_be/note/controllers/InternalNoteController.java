@@ -5,6 +5,7 @@ import com.abhout.cortex_app_be.note.dtos.NoteCreateRequest;
 import com.abhout.cortex_app_be.note.dtos.NoteDetailDto;
 import com.abhout.cortex_app_be.note.dtos.NoteUpdateRequest;
 import com.abhout.cortex_app_be.note.services.NoteService;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -41,7 +42,7 @@ public class InternalNoteController {
     @PostMapping
     public ResponseEntity<ApiResponse<NoteDetailDto>> createInternal(
             @RequestParam UUID ownerId,
-            @RequestBody NoteCreateRequest request
+            @Valid @RequestBody NoteCreateRequest request
     ) {
         NoteDetailDto dto = noteService.create(ownerId, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(dto));
@@ -51,7 +52,7 @@ public class InternalNoteController {
     public ResponseEntity<ApiResponse<NoteDetailDto>> updateInternal(
             @PathVariable UUID noteId,
             @RequestParam UUID ownerId,
-            @RequestBody NoteUpdateRequest request
+            @Valid @RequestBody NoteUpdateRequest request
     ) {
         NoteDetailDto dto = noteService.update(ownerId, noteId, request);
         return ResponseEntity.ok(ApiResponse.success(dto));

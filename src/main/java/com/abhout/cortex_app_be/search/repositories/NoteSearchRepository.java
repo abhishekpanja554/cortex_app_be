@@ -22,6 +22,7 @@ public interface NoteSearchRepository extends JpaRepository<Note, UUID> {
                 ts_rank(n.search_vector, websearch_to_tsquery('english', :query)) AS "rank"
             FROM notes n
             WHERE n.owner_id = :ownerId
+            AND n.deleted_at IS NULL
             AND n.search_vector @@ websearch_to_tsquery('english', :query)
             ORDER BY rank DESC, n.id DESC
             """, nativeQuery = true)
@@ -40,6 +41,7 @@ public interface NoteSearchRepository extends JpaRepository<Note, UUID> {
                 ts_rank(n.search_vector, websearch_to_tsquery('english', :query)) AS "rank"
             FROM notes n
             WHERE n.owner_id = :ownerId
+            AND n.deleted_at IS NULL
             AND n.search_vector @@ websearch_to_tsquery('english', :query)
             AND (
                 ts_rank(n.search_vector, websearch_to_tsquery('english', :query)) < :cursorRank
