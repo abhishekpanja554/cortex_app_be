@@ -10,6 +10,7 @@ import lombok.Setter;
 import org.springframework.data.domain.Persistable;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 @Entity
@@ -47,14 +48,28 @@ public class Note extends Auditable implements Persistable<UUID> {
     private UUID conflictOf;
     @Column(name = "conflict_field", nullable = true)
     private String conflictField;
+    @Column(name = "deleted_at", nullable = true)
+    private Instant deletedAt;
 
     public Note(String title, String body, User owner) {
         this.id = UUID.randomUUID();
         this.title = title;
         this.body = body;
         this.owner = owner;
-        this.titleUpdatedAt = Instant.now();
-        this.bodyUpdatedAt = Instant.now();
+        Instant now = versionStamp();
+        this.titleUpdatedAt = now;
+        this.bodyUpdatedAt = now;
+    }
+
+    // titleUpdatedAt/bodyUpdatedAt are version tokens compared with equals() during sync.
+    // Postgres stores microseconds, so truncate here; otherwise the in-memory value we
+    // return to the client differs from the stored one and every later push mismatches.
+    public static Instant versionStamp() {
+        return Instant.now().truncatedTo(ChronoUnit.MICROS);
+    }
+
+    public boolean isDeleted() {
+        return deletedAt != null;
     }
 
     @Override
