@@ -1,8 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
-    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
-        <encoder class="net.logstash.logback.encoder.LogstashEncoder"/>
-    </appender>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <!-- LOG_FORMAT (json|pretty) picks logging/console-*.xml. -->
+    <springProperty scope="local" name="LOG_FORMAT" source="app.logging.format" defaultValue="json"/>
+
+    <!-- Plumbing frames hidden from stack traces (regexes must not contain commas). -->
+    <property name="NOISE_FRAMES"
+              value="^org\.apache\.catalina\.,^org\.apache\.coyote\.,^org\.apache\.tomcat\.,^jakarta\.servlet\.http\.HttpServlet\.,^jdk\.internal\.reflect\.,^java\.lang\.reflect\.Method\.,^java\.lang\.Thread\.run,^java\.lang\.VirtualThread\.run,^org\.springframework\.security\.web\.,^org\.springframework\.web\.filter\."/>
+
+    <!-- Stack-trace shortener for the pretty pattern. -->
+    <conversionRule conversionWord="stack" class="net.logstash.logback.stacktrace.ShortenedThrowableConverter"/>
+
+    <include resource="logging/console-${LOG_FORMAT}.xml"/>
+
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
     </root>
