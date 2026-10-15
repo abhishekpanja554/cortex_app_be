@@ -7,6 +7,9 @@ app:
     internal-api-key: ${CORTEX_AI_API_KEY:}
     queue-key: jobs:embedding
     timeout-threshold: 5m
+  logging:
+    format: ${LOG_FORMAT:json}
+    max-body-length: 10000
 spring:
   application:
     name: cortex_app_be
@@ -14,6 +17,9 @@ spring:
     url: jdbc:postgresql://localhost:5432/cortex_app
     username: abhis
     password: ${DB_PASSWORD:}
+  mvc:
+    # GlobalExceptionHandler already logs these, avoids duplicates.
+    log-resolved-exception: false
   jpa:
     hibernate:
       ddl-auto: validate

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<included>
+    <!-- Human-readable: requestId per line, details on an indented line, multi-line stack traces. -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(%5p) %clr([%X{requestId:-}]){magenta} %clr(%-40.40logger{39}){cyan} %clr(:){faint} %m%replace(%replace(%marker){'^COMMONS-LOGGING$', ''}){'(?s)^(.+)$', '&#10;    $1'}%n%stack{full,full,full,${NOISE_FRAMES}}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+</included>
