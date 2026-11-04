@@ -7,6 +7,9 @@ app:
     internal-api-key: ${CORTEX_AI_API_KEY:}
     queue-key: jobs:embedding
     timeout-threshold: 5m
+  attachments:
+    dir: ${ATTACHMENTS_DIR:./data/attachments}
+    max-size: 10MB
   logging:
     format: ${LOG_FORMAT:json}
     max-body-length: 10000

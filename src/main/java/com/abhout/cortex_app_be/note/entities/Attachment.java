@@ -1,11 +1,13 @@
 package com.abhout.cortex_app_be.note.entities;
 
 import com.abhout.cortex_app_be.common.Auditable;
+import com.abhout.cortex_app_be.user.entities.User;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.springframework.data.domain.Persistable;
 
 import java.util.UUID;
 
@@ -14,13 +16,18 @@ import java.util.UUID;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Entity
 @Table(name = "attachments")
-public class Attachment extends Auditable {
+public class Attachment extends Auditable implements Persistable<UUID> {
+    // Client-generated, like note ids: the note body already references the image by
+    // this id, so the upload can be retried with PUT without creating duplicates.
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "note_id", nullable = false)
+    @JoinColumn(name = "owner_id", nullable = false)
+    private User owner;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "note_id")
     private Note note;
 
     @Column(nullable = false)
@@ -32,17 +39,20 @@ public class Attachment extends Auditable {
     @Column(name = "size_bytes", nullable = false)
     private long sizeBytes;
 
+    // Relative to app.attachments.dir, so the storage root can move.
     @Column(name = "storage_path", nullable = false)
     private String storagePath;
 
     public Attachment(
-            Note note,
+            UUID id,
+            User owner,
             String filename,
             String contentType,
             long sizeBytes,
             String storagePath
     ) {
-        this.note = note;
+        this.id = id;
+        this.owner = owner;
         this.filename = filename;
         this.contentType = contentType;
         this.sizeBytes = sizeBytes;
@@ -59,5 +69,12 @@ public class Attachment extends Auditable {
     @Override
     public int hashCode() {
         return getClass().hashCode();
+    }
+
+    // Assigned id: without this, save() would merge, and a second upload with the same
+    // id would overwrite the first row instead of failing on the primary key.
+    @Override
+    public boolean isNew() {
+        return getCreatedAt() == null;
     }
 }
